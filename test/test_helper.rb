@@ -153,6 +153,8 @@ module TinyTds
       loader.execute(drop_sql).do
       loader.execute(schema_sql).do
       loader.execute(sp_sql).do
+      loader.execute(sp_error_sql).do
+      loader.execute(sp_several_prints_sql).do
       loader.close
       true
     end
@@ -167,7 +169,16 @@ module TinyTds
         ) DROP TABLE datatypes
         IF EXISTS(
           SELECT 1 FROM sysobjects WHERE type = 'P' AND name = 'tinytds_TestReturnCodes'
-        ) DROP PROCEDURE tinytds_TestReturnCodes|
+        ) DROP PROCEDURE tinytds_TestReturnCodes
+        IF EXISTS(
+          SELECT 1 FROM sysobjects WHERE type = 'P' AND name = 'tinytds_TestPrintWithError'
+        ) DROP PROCEDURE tinytds_TestPrintWithError
+        IF EXISTS(
+          SELECT 1 FROM sysobjects WHERE type = 'P' AND name = 'tinytds_TestPrintWithError'
+        ) DROP PROCEDURE tinytds_TestPrintWithError
+        IF EXISTS(
+          SELECT 1 FROM sysobjects WHERE type = 'P' AND name = 'tinytds_TestSeveralPrints'
+        ) DROP PROCEDURE tinytds_TestSeveralPrints|
     end
 
     def drop_sql_microsoft
@@ -181,7 +192,15 @@ module TinyTds
         IF EXISTS (
           SELECT name FROM sysobjects
           WHERE name = 'tinytds_TestReturnCodes' AND type = 'P'
-        ) DROP PROCEDURE tinytds_TestReturnCodes|
+        ) DROP PROCEDURE tinytds_TestReturnCodes
+        IF EXISTS (
+          SELECT name FROM sysobjects
+          WHERE name = 'tinytds_TestPrintWithError' AND type = 'P'
+        ) DROP PROCEDURE tinytds_TestPrintWithError
+        IF EXISTS (
+          SELECT name FROM sysobjects
+          WHERE name = 'tinytds_TestSeveralPrints' AND type = 'P'
+        ) DROP PROCEDURE tinytds_TestSeveralPrints|
     end
 
     def sp_sql
@@ -189,6 +208,21 @@ module TinyTds
         AS
         SELECT 1 as [one]
         RETURN(420) |
+    end
+
+    def sp_error_sql
+      %|CREATE PROCEDURE tinytds_TestPrintWithError
+        AS
+        PRINT 'hello'
+        RAISERROR('Error following print', 16, 1)|
+    end
+
+    def sp_several_prints_sql
+      %|CREATE PROCEDURE tinytds_TestSeveralPrints
+        AS
+        PRINT 'hello 1'
+        PRINT 'hello 2'
+        PRINT 'hello 3'|
     end
 
     def find_value(id, column, query_options={})
@@ -214,4 +248,3 @@ module TinyTds
 
   end
 end
-

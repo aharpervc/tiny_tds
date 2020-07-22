@@ -652,6 +652,24 @@ class ResultTest < TinyTds::TestCase
             assert_equal 1, messages.length, 'there should be one message after one print statement'
             assert_equal msg, m.message, 'message text'
           end
+
+          it 'must raise an error preceded by a `print` message' do
+            messages.clear
+            action = lambda { @client.execute("EXEC tinytds_TestPrintWithError").do }
+            assert_raise_tinytds_error(action) do |e|
+              assert_equal 'hello', messages.first.message, 'message text'
+
+              assert_equal "Error following print", e.message
+              assert_equal 16, e.severity
+              assert_equal 50000, e.db_error_number
+            end
+          end
+
+          it 'calls the provided message handler for each of a series of `print` messages' do
+            messages.clear
+            @client.execute("EXEC tinytds_TestSeveralPrints").do
+            assert_equal ['hello 1', 'hello 2', 'hello 3'], messages.map { |e| e.message }, 'message list'
+          end
         end
 
         it 'must not raise an error when severity is 10 or less' do
@@ -770,4 +788,3 @@ class ResultTest < TinyTds::TestCase
   end
 
 end
-

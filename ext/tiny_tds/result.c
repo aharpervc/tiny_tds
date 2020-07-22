@@ -86,6 +86,9 @@ static void dbcancel_ubf(DBPROCESS *client) {
 static void nogvl_setup(DBPROCESS *client) {
   GET_CLIENT_USERDATA(client);
   userdata->nonblocking = 1;
+  userdata->nonblocking_errors_length = 0;
+  userdata->nonblocking_errors = malloc(ERRORS_STACK_INIT_SIZE * sizeof(tinytds_errordata));
+  userdata->nonblocking_errors_size = ERRORS_STACK_INIT_SIZE;
 }
 
 static void nogvl_cleanup(DBPROCESS *client) {
@@ -95,17 +98,22 @@ static void nogvl_cleanup(DBPROCESS *client) {
   Now that the blocking operation is done, we can finally throw any
   exceptions based on errors from SQL Server.
   */
-  if (userdata->nonblocking_error.is_set) {
-    userdata->nonblocking_error.is_set = 0;
+  for (short int i = 0; i < userdata->nonblocking_errors_length; i++) {
+    tinytds_errordata error = userdata->nonblocking_errors[i];
     rb_tinytds_raise_error(client,
-      userdata->nonblocking_error.is_message,
-      userdata->nonblocking_error.cancel,
-      userdata->nonblocking_error.error,
-      userdata->nonblocking_error.source,
-      userdata->nonblocking_error.severity,
-      userdata->nonblocking_error.dberr,
-      userdata->nonblocking_error.oserr);
+      error.is_message,
+      error.cancel,
+      error.error,
+      error.source,
+      error.severity,
+      error.dberr,
+      error.oserr
+    );
   }
+
+  free(userdata->nonblocking_errors);
+  userdata->nonblocking_errors_length = 0;
+  userdata->nonblocking_errors_size = 0;
 }
 
 static RETCODE nogvl_dbsqlok(DBPROCESS *client) {

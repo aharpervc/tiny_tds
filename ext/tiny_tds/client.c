@@ -57,6 +57,16 @@ VALUE rb_tinytds_raise_error(DBPROCESS *dbproc, int is_message, int cancel, cons
 
 
 // Lib Backend (Memory Management & Handlers)
+static void push_userdata_error(tinytds_client_userdata *userdata, tinytds_errordata error) {
+  // reallocate memory for the array as needed
+  if (userdata->nonblocking_errors_size == userdata->nonblocking_errors_length) {
+    userdata->nonblocking_errors_size *= 2;
+    userdata->nonblocking_errors = realloc(userdata->nonblocking_errors, userdata->nonblocking_errors_size * sizeof(tinytds_errordata));
+  }
+
+  userdata->nonblocking_errors[userdata->nonblocking_errors_length] = error;
+  userdata->nonblocking_errors_length++;
+}
 
 int tinytds_err_handler(DBPROCESS *dbproc, int severity, int dberr, int oserr, char *dberrstr, char *oserrstr) {
   static const char *source = "error";
@@ -111,24 +121,16 @@ int tinytds_err_handler(DBPROCESS *dbproc, int severity, int dberr, int oserr, c
       userdata->dbcancel_sent = 1;
     }
 
-    /*
-    If we've already captured an error message, don't overwrite it. This is
-    here because FreeTDS sends a generic "General SQL Server error" message
-    that will overwrite the real message. This is not normally a problem
-    because a ruby exception is normally thrown and we bail before the
-    generic message can be sent.
-    */
-    if (!userdata->nonblocking_error.is_set) {
-      userdata->nonblocking_error.is_message = 0;
-      userdata->nonblocking_error.cancel = cancel;
-      strncpy(userdata->nonblocking_error.error, dberrstr, ERROR_MSG_SIZE);
-      strncpy(userdata->nonblocking_error.source, source, ERROR_MSG_SIZE);
-      userdata->nonblocking_error.severity = severity;
-      userdata->nonblocking_error.dberr = dberr;
-      userdata->nonblocking_error.oserr = oserr;
-      userdata->nonblocking_error.is_set = 1;
-    }
-
+    tinytds_errordata error = {
+      .is_message = 0,
+      .cancel = cancel,
+      .severity = severity,
+      .dberr = dberr,
+      .oserr = oserr
+    };
+    strncpy(error.error, dberrstr, ERROR_MSG_SIZE);
+    strncpy(error.source, source, ERROR_MSG_SIZE);
+    push_userdata_error(userdata, error);
   } else {
     rb_tinytds_raise_error(dbproc, 0, cancel, dberrstr, source, severity, dberr, oserr);
   }
@@ -144,16 +146,21 @@ int tinytds_msg_handler(DBPROCESS *dbproc, DBINT msgno, int msgstate, int severi
 
   // See tinytds_err_handler() for info about why we do this
   if (userdata && userdata->nonblocking) {
-    if (!userdata->nonblocking_error.is_set) {
-      userdata->nonblocking_error.is_message = !is_message_an_error;
-      userdata->nonblocking_error.cancel = is_message_an_error;
-      strncpy(userdata->nonblocking_error.error, msgtext, ERROR_MSG_SIZE);
-      strncpy(userdata->nonblocking_error.source, source, ERROR_MSG_SIZE);
-      userdata->nonblocking_error.severity = severity;
-      userdata->nonblocking_error.dberr = msgno;
-      userdata->nonblocking_error.oserr = msgstate;
-      userdata->nonblocking_error.is_set = 1;
-    }
+    /*
+    In the case of non-blocking command batch execution we can receive multiple messages
+    (including errors). We keep track of those here so they can be processed once the
+    non-blocking call returns.
+    */
+    tinytds_errordata error = {
+      .is_message = !is_message_an_error,
+      .cancel = is_message_an_error,
+      .severity = severity,
+      .dberr = msgno,
+      .oserr = msgstate
+    };
+    strncpy(error.error, msgtext, ERROR_MSG_SIZE);
+    strncpy(error.source, source, ERROR_MSG_SIZE);
+    push_userdata_error(userdata, error);
 
     if (is_message_an_error && !dbdead(dbproc) && !userdata->closed) {
       dbcancel(dbproc);
@@ -171,7 +178,10 @@ static void rb_tinytds_client_reset_userdata(tinytds_client_userdata *userdata) 
   userdata->dbsqlok_sent = 0;
   userdata->dbcancel_sent = 0;
   userdata->nonblocking = 0;
-  userdata->nonblocking_error.is_set = 0;
+  // the following is mainly done for consistency since the values are reset accordingly in nogvl_setup/cleanup.
+  // the nonblocking_errors array does not need to be freed here. That is done as part of nogvl_cleanup.
+  userdata->nonblocking_errors_length = 0;
+  userdata->nonblocking_errors_size = 0;
 }
 
 static void rb_tinytds_client_mark(void *ptr) {
