@@ -129,14 +129,12 @@ class ClientTest < TinyTds::TestCase
       end
     end
 
-    it 'must run this test to prove we account for dropped connections' do
-      skip
+    it 'raises TinyTds exception with sql batch timeout due to network failure' do
+      skip if ENV['CI'] && ENV['APPVEYOR_BUILD_FOLDER'] # only CI using docker
       begin
-        client = new_connection :login_timeout => 2, :timeout => 2
+        client = new_connection timeout: 2
         assert_client_works(client)
-        STDOUT.puts "Disconnect network!"
-        sleep 10
-        STDOUT.puts "This should not get stuck past 6 seconds!"
+        docker_container('pause', wait_for: 1)
         action = lambda { client.execute('SELECT 1 as [one]').each }
         assert_raise_tinytds_error(action) do |e|
           assert_equal 20003, e.db_error_number
@@ -144,12 +142,11 @@ class ClientTest < TinyTds::TestCase
           assert_match %r{timed out}i, e.message, 'ignore if non-english test run'
         end
       ensure
-        STDOUT.puts "Reconnect network!"
-        sleep 10
+        docker_container('unpause', wait_for: 1)
         action = lambda { client.execute('SELECT 1 as [one]').each }
         assert_raise_tinytds_error(action) do |e|
           assert_equal 20047, e.db_error_number
-          assert_equal 1, e.severity
+          assert_equal 9, e.severity
           assert_match %r{dead or not enabled}i, e.message, 'ignore if non-english test run'
         end
         close_client(client)

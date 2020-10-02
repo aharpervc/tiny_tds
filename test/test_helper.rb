@@ -246,5 +246,9 @@ module TinyTds
       client.execute("ROLLBACK TRANSACTION").do
     end
 
+    def docker_container(cmd, wait_for: 0)
+      system("docker #{cmd} $(docker ps --format '{{.Names}}' --filter 'ancestor=metaskills/mssql-server-linux-tinytds:2017-GA') > /dev/null")
+      sleep(wait_for) if wait_for > 0
+    end
   end
 end
