@@ -146,7 +146,7 @@ class ClientTest < TinyTds::TestCase
         action = lambda { client.execute('SELECT 1 as [one]').each }
         assert_raise_tinytds_error(action) do |e|
           assert_equal 20047, e.db_error_number
-          assert_equal 9, e.severity
+          assert_includes [1,9], e.severity
           assert_match %r{dead or not enabled}i, e.message, 'ignore if non-english test run'
         end
         close_client(client)
