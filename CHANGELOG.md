@@ -1,5 +1,10 @@
 ## (unreleased)
 
+## 2.1.4
+
+* todo: changelog for info messages
+* todo: changelog for network timeouts
+
 ## 2.1.3
 
 * Removed old/unused appveyor config
